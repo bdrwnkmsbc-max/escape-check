@@ -1,0 +1,66 @@
+name: Escape Room Check
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # ca. alle 10 Minuten (GitHub kann sich verspaeten)
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Nur Testmail senden"
+        type: boolean
+        default: false
+
+concurrency:
+  group: escape-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install playwright
+
+      - name: Browser-Cache laden
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-v1
+
+      - run: playwright install --with-deps chromium
+
+      - name: Gemeldete Tage laden
+        uses: actions/cache/restore@v4
+        with:
+          path: gemeldet.json
+          key: state-${{ github.run_id }}
+          restore-keys: state-
+
+      - name: Testmail senden
+        if: ${{ inputs.test }}
+        run: python ueberwachen.py --test
+        env:
+          MAIL_VON: ${{ secrets.MAIL_VON }}
+          MAIL_PASSWORT: ${{ secrets.MAIL_PASSWORT }}
+          MAIL_AN: ${{ secrets.MAIL_AN }}
+
+      - name: Termine pruefen
+        if: ${{ !inputs.test }}
+        run: python ueberwachen.py
+        env:
+          MAIL_VON: ${{ secrets.MAIL_VON }}
+          MAIL_PASSWORT: ${{ secrets.MAIL_PASSWORT }}
+          MAIL_AN: ${{ secrets.MAIL_AN }}
+
+      - name: Gemeldete Tage speichern
+        if: ${{ always() && !inputs.test && hashFiles('gemeldet.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: gemeldet.json
+          key: state-${{ github.run_id }}
