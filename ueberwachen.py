@@ -26,7 +26,7 @@ from playwright.sync_api import sync_playwright
 SEITE = "https://finest-escape.de/nuernberg/legenden-der-zauberakademie/#Buchung"
 TAGE_VORAUS = 240          # ca. 8 Monate
 SCHRITT = 14               # Tage pro Abfrage
-PAUSE_MINUTEN = 10
+PAUSE_MINUTEN = 30
 STATE_DATEI = "gemeldet.json"
 
 
@@ -48,8 +48,11 @@ def abfragen(info_modus=False):
     """Laedt die Seite, uebernimmt den Token des Browsers und fragt die Tage ab."""
     auth = {}
     info = {}
+    gesehen = []
 
     def on_request(req):
+        if "quinbook" in req.url:
+            gesehen.append(req.url[:120])
         if "getslotscounts" in req.url and "h" not in auth:
             h = req.headers.get("authorization")
             if h:
@@ -69,10 +72,21 @@ def abfragen(info_modus=False):
     frei = {}
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page(locale="de-DE", timezone_id="Europe/Berlin")
+        page = browser.new_page(
+            locale="de-DE", timezone_id="Europe/Berlin",
+            user_agent=("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                        "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"))
         page.on("request", on_request)
         page.on("response", on_response)
-        page.goto(SEITE, wait_until="networkidle")
+        antwort = page.goto(SEITE, wait_until="networkidle")
+        print(f"  Seite geladen: Status {antwort.status if antwort else '?'}, Titel: {page.title()!r}")
+        for name in ("Alle akzeptieren", "Akzeptieren", "Zustimmen", "Alle zulassen"):
+            try:
+                page.get_by_role("button", name=name).first.click(timeout=1500)
+                print(f"  Cookie-Banner geklickt: {name}")
+                break
+            except Exception:
+                pass
         for _ in range(10):
             if "h" in auth:
                 break
@@ -80,6 +94,12 @@ def abfragen(info_modus=False):
             page.wait_for_timeout(1000)
         page.wait_for_timeout(2000)
         if "h" not in auth:
+            try:
+                page.screenshot(path="fehler.png", full_page=True)
+                print("  Seitentext:", page.inner_text("body")[:600].replace("\n", " "))
+            except Exception as ex:
+                print("  Diagnose fehlgeschlagen:", ex)
+            print("  Quinbook-Anfragen gesehen:", gesehen)
             browser.close()
             raise RuntimeError("Kein Token gefunden - Seite hat die Terminabfrage nicht gestartet.")
 
