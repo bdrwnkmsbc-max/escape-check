@@ -2,7 +2,7 @@ name: Escape Room Check
 
 on:
   schedule:
-    - cron: "*/10 * * * *"   # ca. alle 10 Minuten (GitHub kann sich verspaeten)
+    - cron: "*/30 * * * *"   # ca. alle 10 Minuten (GitHub kann sich verspaeten)
   workflow_dispatch:
     inputs:
       test:
@@ -17,7 +17,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -64,3 +64,11 @@ jobs:
         with:
           path: gemeldet.json
           key: state-${{ github.run_id }}
+
+      - name: Fehlerbild sichern
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fehler
+          path: fehler.png
+          if-no-files-found: ignore
